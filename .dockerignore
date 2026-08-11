@@ -1,0 +1,8 @@
+node_modules
+build
+dist
+data
+.git
+.DS_Store
+videos
+posters

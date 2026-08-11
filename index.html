@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#fffaf2">
+    <meta name="description" content="按 Unit 整理的儿童趣味学习视频，点一点就能开始观看。">
+    <title>小小探索站 | 儿童趣味学习视频</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="site-shell">
+      <div class="background-orb background-orb-one" aria-hidden="true"></div>
+      <div class="background-orb background-orb-two" aria-hidden="true"></div>
+
+      <header class="site-header">
+        <div class="brand-mark" aria-hidden="true"><span>★</span></div>
+        <div>
+          <p class="eyebrow">DUODUO LEARNING CLUB</p>
+          <h1>小小探索站</h1>
+        </div>
+        <div class="header-bubble" aria-hidden="true"><span>♪</span></div>
+      </header>
+
+      <section class="welcome-panel" aria-labelledby="welcome-title">
+        <div class="welcome-copy">
+          <span class="welcome-kicker">今天想学哪一课？</span>
+          <h2 id="welcome-title">点一点，<em>快乐看视频</em></h2>
+          <p>挑一个彩色课程卡片，和小伙伴一起出发吧！</p>
+        </div>
+        <div class="welcome-characters" aria-hidden="true">
+          <span class="character character-sun">☀</span>
+          <span class="character character-star">✦</span>
+          <span class="character character-cloud">☁</span>
+          <span class="character character-rainbow">◒</span>
+        </div>
+      </section>
+
+      <section class="lesson-section" aria-labelledby="lesson-title">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">MY LESSONS</span>
+            <h2 id="lesson-title">选择学习单元</h2>
+          </div>
+          <span class="lesson-count is-hidden" id="lessonCount"></span>
+        </div>
+
+        <div class="unit-tabs is-hidden" id="unitTabs" role="tablist" aria-label="学习单元"></div>
+
+        <div class="status-message" id="statusMessage" role="status">
+          <span class="loading-dot" aria-hidden="true"></span>
+          <span>正在准备课程卡片……</span>
+        </div>
+
+        <div class="video-grid is-hidden" id="videoGrid" role="tabpanel"></div>
+      </section>
+
+      <footer class="site-footer">
+        <span class="footer-sparkle" aria-hidden="true">✦</span>
+        <span>每一次点击，都是一次小小的发现</span>
+        <span class="footer-sparkle" aria-hidden="true">✦</span>
+      </footer>
+    </main>
+
+    <div class="player-overlay is-hidden" id="playerOverlay" role="presentation">
+      <section class="player-dialog" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+        <div class="player-topline">
+          <div>
+            <span class="player-unit-label" id="playerUnitLabel"></span>
+            <h2 id="playerTitle"></h2>
+          </div>
+          <button class="close-button" id="closeButton" type="button" aria-label="关闭播放器">×</button>
+        </div>
+
+        <div class="video-frame">
+          <video id="videoPlayer" controls playsinline preload="metadata"></video>
+          <div class="video-error is-hidden" id="videoError" role="alert">
+            <span aria-hidden="true">☁</span>
+            <strong>这个视频暂时打不开</strong>
+            <p>请检查视频文件是否和清单中的名字完全一致。</p>
+          </div>
+        </div>
+
+        <div class="player-controls">
+          <button class="player-nav-button" id="previousButton" type="button">
+            <span aria-hidden="true">←</span> 上一集
+          </button>
+          <button class="back-to-list" id="backButton" type="button">回到课程列表</button>
+          <button class="player-nav-button" id="nextButton" type="button">
+            下一集 <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

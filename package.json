@@ -1,0 +1,55 @@
+{
+  "name": "kids-video-library",
+  "version": "0.1.0",
+  "private": true,
+  "description": "儿童学习视频管理平台",
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/contracts"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c blue,green \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm --workspace @kids-video/web run dev",
+    "dev:api": "npm --workspace @kids-video/api run dev",
+    "build": "npm run build:contracts && npm run build:web && npm run build:api",
+    "build:contracts": "npm --workspace @kids-video/contracts run build",
+    "build:web": "npm --workspace @kids-video/web run build",
+    "build:api": "npm --workspace @kids-video/api run build",
+    "typecheck": "npm run build:contracts && npm run typecheck:contracts && npm run typecheck:web && npm run typecheck:api",
+    "typecheck:contracts": "npm --workspace @kids-video/contracts run typecheck",
+    "typecheck:web": "npm --workspace @kids-video/web run typecheck",
+    "typecheck:api": "npm --workspace @kids-video/api run typecheck",
+    "lint": "npm run lint:contracts && npm run lint:web && npm run lint:api",
+    "lint:contracts": "npm --workspace @kids-video/contracts run lint",
+    "lint:web": "npm --workspace @kids-video/web run lint",
+    "lint:api": "npm --workspace @kids-video/api run lint",
+    "db:generate": "npm --workspace @kids-video/api run db:generate",
+    "db:migrate": "npm --workspace @kids-video/api run db:migrate",
+    "admin:create": "npm --workspace @kids-video/api run admin:create",
+    "import:static": "npm --workspace @kids-video/api run import:static",
+    "backup": "bash scripts/backup.sh",
+    "cleanup:trash": "bash scripts/cleanup-trash.sh",
+    "test": "npm --workspace @kids-video/api run test",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "concurrently": "^9.1.2",
+    "drizzle-kit": "^0.31.10",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.8"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "argon2@0.45.1": true,
+    "better-sqlite3@13.0.3": true
+  }
+}

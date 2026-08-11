@@ -1,0 +1,162 @@
+{
+  "units": [
+    {
+      "id": "unit1",
+      "title": "Unit 1",
+      "subtitle": "字母和小故事",
+      "videos": [
+        {
+          "order": 1,
+          "title": "Big A, Little a",
+          "file": "videos/unit1/1-Big A，little a.mp4",
+          "poster": "posters/unit1/01.jpg"
+        },
+        {
+          "order": 2,
+          "title": "A Clever Owl",
+          "file": "videos/unit1/2-A Clever Owl.mp4",
+          "poster": "posters/unit1/02.jpg"
+        },
+        {
+          "order": 3,
+          "title": "Grandpa’s Farm",
+          "file": "videos/unit1/3-Grandpa‘s Farm.mp4",
+          "poster": "posters/unit1/03.jpg"
+        },
+        {
+          "order": 4,
+          "title": "Big B, Little b",
+          "file": "videos/unit1/4-Big B,Little b.mp4",
+          "poster": "posters/unit1/04.jpg"
+        },
+        {
+          "order": 5,
+          "title": "One Cool Dad",
+          "file": "videos/unit1/5-One Cool Dad.mp4",
+          "poster": "posters/unit1/05.jpg"
+        },
+        {
+          "order": 6,
+          "title": "Seven Magic Bottles",
+          "file": "videos/unit1/6-Seven Magic Bottles.mp4",
+          "poster": "posters/unit1/06.jpg"
+        },
+        {
+          "order": 7,
+          "title": "Big C, Little c",
+          "file": "videos/unit1/7-Big C，Little c.mp4",
+          "poster": "posters/unit1/07.jpg"
+        },
+        {
+          "order": 8,
+          "title": "Thank You",
+          "file": "videos/unit1/8--Thank You.mp4",
+          "poster": "posters/unit1/08.jpg"
+        },
+        {
+          "order": 9,
+          "title": "Chico is out",
+          "file": "videos/unit1/9-Chico is out.mp4",
+          "poster": "posters/unit1/09.jpg"
+        },
+        {
+          "order": 10,
+          "title": "Big D, Little d",
+          "file": "videos/unit1/10-Big D，Little d.mp4",
+          "poster": "posters/unit1/10.jpg"
+        },
+        {
+          "order": 11,
+          "title": "The Giant",
+          "file": "videos/unit1/11-The Giant.mp4",
+          "poster": "posters/unit1/11.jpg"
+        },
+        {
+          "order": 12,
+          "title": "Where is Mom",
+          "file": "videos/unit1/12-Where is Mom.mp4",
+          "poster": "posters/unit1/12.jpg"
+        }
+      ]
+    },
+    {
+      "id": "unit2",
+      "title": "Unit 2",
+      "subtitle": "家庭和颜色",
+      "videos": [
+        {
+          "order": 1,
+          "title": "Big E, Little e",
+          "file": "videos/unit2/1-Big E，Little e.mp4",
+          "poster": "posters/unit2/01.jpg"
+        },
+        {
+          "order": 2,
+          "title": "My Family",
+          "file": "videos/unit2/2-My Family.mp4",
+          "poster": "posters/unit2/02.jpg"
+        },
+        {
+          "order": 3,
+          "title": "I Love You!",
+          "file": "videos/unit2/3-I Love You!.mp4",
+          "poster": "posters/unit2/03.jpg"
+        },
+        {
+          "order": 4,
+          "title": "Big F, Little f",
+          "file": "videos/unit2/4-Big F,Little f.mp4",
+          "poster": "posters/unit2/04.jpg"
+        },
+        {
+          "order": 5,
+          "title": "Dear Santa",
+          "file": "videos/unit2/5-Dear Santa.mp4",
+          "poster": "posters/unit2/05.jpg"
+        },
+        {
+          "order": 6,
+          "title": "What Is It",
+          "file": "videos/unit2/6-What Is It.mp4",
+          "poster": "posters/unit2/06.jpg"
+        },
+        {
+          "order": 7,
+          "title": "Big G, Little g",
+          "file": "videos/unit2/7-Big G,Little g.mp4",
+          "poster": "posters/unit2/07.jpg"
+        },
+        {
+          "order": 8,
+          "title": "A Fashion Show",
+          "file": "videos/unit2/8-A Fashion Show.mp4",
+          "poster": "posters/unit2/08.jpg"
+        },
+        {
+          "order": 9,
+          "title": "Mr. Big",
+          "file": "videos/unit2/9-Mr.Big.mp4",
+          "poster": "posters/unit2/09.jpg"
+        },
+        {
+          "order": 10,
+          "title": "Big H, Little h",
+          "file": "videos/unit2/10-Big H,Little h.mp4",
+          "poster": "posters/unit2/10.jpg"
+        },
+        {
+          "order": 11,
+          "title": "What Color Is It?",
+          "file": "videos/unit2/11-What Color Is It？.mp4",
+          "poster": "posters/unit2/11.jpg"
+        },
+        {
+          "order": 12,
+          "title": "A Brown Bear",
+          "file": "videos/unit2/12-A Brown Bear.mp4",
+          "poster": "posters/unit2/12.jpg"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+# Operating-system and editor metadata
+.DS_Store
+*.swp
+
+# Local secrets and logs
+.env
+!.env.example
+!.env.docker.example
+*.log
+
+# Optional local preview output
+dist/
+build/
+node_modules/
+data/
+coverage/
+backups/
+
+# Local video library and generated media
+videos/
+posters/
+*.mp4
+*.mov
+*.m4v
+*.mkv
+*.avi
+*.webm
+*.wmv
+*.flv

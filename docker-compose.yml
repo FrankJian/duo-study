@@ -1,0 +1,43 @@
+services:
+  api:
+    image: ${API_IMAGE:-kids-video-library-api:local}
+    build:
+      context: .
+      target: api
+    environment:
+      NODE_ENV: production
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-7}"
+      MAX_VIDEO_BYTES: "${MAX_VIDEO_BYTES:-2147483648}"
+      MAX_IMAGE_BYTES: "${MAX_IMAGE_BYTES:-10485760}"
+      STATIC_ROOT: /app/static
+    volumes:
+      - app_data:/app/data
+      - ./videos:/app/static/videos:ro
+      - ./posters:/app/static/posters:ro
+      - ./videos.json:/app/static/videos.json:ro
+    expose:
+      - "3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  web:
+    image: ${WEB_IMAGE:-kids-video-library-web:local}
+    build:
+      context: .
+      target: web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - app_data:/srv/data:ro
+    restart: unless-stopped
+
+volumes:
+  app_data:
