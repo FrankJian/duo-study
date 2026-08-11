@@ -1,9 +1,11 @@
 import path from "node:path";
+import dotenv from "dotenv";
 
 const cwd = path.resolve(process.cwd());
 const rootDir = path.basename(cwd) === "api" && path.basename(path.dirname(cwd)) === "apps"
   ? path.resolve(cwd, "../..")
   : cwd;
+dotenv.config({ path: path.join(rootDir, ".env") });
 const dataDir = path.resolve(process.env.DATA_DIR ?? path.join(rootDir, "data"));
 
 export const config = {

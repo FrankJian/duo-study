@@ -56,6 +56,7 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
   const [unitForm, setUnitForm] = useState({ slug: "", title: "", subtitle: "" });
   const [videoForm, setVideoForm] = useState({ title: "", unitId: "", sortOrder: "0", status: "draft" });
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [posterUploads, setPosterUploads] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   useEffect(() => { Promise.all([api<Unit[]>("/api/admin/units"), api<Video[]>("/api/admin/videos")]).then(([nextUnits, nextVideos]) => { setUnits(nextUnits); setVideos(nextVideos); setVideoForm((current) => ({ ...current, unitId: current.unitId || nextUnits[0]?.id || "" })); }).catch((reason) => setError(reason instanceof Error ? reason.message : "加载失败")); }, [refresh, setError]);
   const counts = useMemo(() => ({ videos: videos.length, drafts: videos.filter((item) => item.status === "draft").length }), [videos]);
@@ -63,11 +64,48 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
   async function uploadVideo(event: FormEvent) { event.preventDefault(); if (!videoFile) return setError("请选择视频文件"); setBusy(true); setError(""); const body = new FormData(); body.set("video", videoFile); body.set("title", videoForm.title); body.set("unitId", videoForm.unitId); body.set("sortOrder", videoForm.sortOrder); body.set("status", videoForm.status); try { await api("/api/admin/videos", { method: "POST", body }); setVideoFile(null); setVideoForm((current) => ({ ...current, title: "", sortOrder: "0" })); setRefresh((value) => value + 1); } catch (reason) { setError(reason instanceof Error ? reason.message : "上传失败"); } finally { setBusy(false); } }
   async function logout() { try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } finally { onLoggedOut(); } }
   async function setVideoStatus(video: Video, status: string) { try { await api(`/api/admin/videos/${video.id}`, { method: "PATCH", body: JSON.stringify({ status }) }); setRefresh((value) => value + 1); } catch (reason) { setError(reason instanceof Error ? reason.message : "状态更新失败"); } }
-  async function uploadPoster(video: Video, file: File) { const body = new FormData(); body.set("poster", file); try { await api(`/api/admin/videos/${video.id}/poster`, { method: "POST", body }); setRefresh((value) => value + 1); } catch (reason) { setError(reason instanceof Error ? reason.message : "封面上传失败"); } }
+  async function uploadPoster(video: Video, file: File) {
+    const previewUrl = URL.createObjectURL(file);
+    const body = new FormData();
+    body.set("poster", file);
+    setError("");
+    setPosterUploads((current) => ({ ...current, [video.id]: previewUrl }));
+    try {
+      const result = await api<{ posterUrl: string }>(`/api/admin/videos/${video.id}/poster`, { method: "POST", body });
+      setVideos((current) => current.map((item) => item.id === video.id ? { ...item, posterUrl: result.posterUrl } : item));
+      setRefresh((value) => value + 1);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "封面上传失败");
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+      setPosterUploads((current) => {
+        const next = { ...current };
+        delete next[video.id];
+        return next;
+      });
+    }
+  }
   return <div className="admin-page admin-dashboard"><header className="admin-header"><div><p className="admin-kicker">LEARNING LIBRARY</p><h1>内容管理</h1><p className="admin-muted">你好，{user.username} · {units.length} 个 Unit · {counts.videos} 个视频 · {counts.drafts} 个草稿</p></div><div className="admin-actions"><a className="back-link" href="/">查看公开页面</a><button className="admin-secondary" onClick={logout}>退出登录</button></div></header>
     {error ? <div className="admin-error admin-banner">{error}</div> : null}
     <div className="admin-columns"><form className="admin-card" onSubmit={createUnit}><h2>新建 Unit</h2><label>Slug<input value={unitForm.slug} onChange={(e) => setUnitForm({ ...unitForm, slug: e.target.value })} placeholder="unit3" required /></label><label>标题<input value={unitForm.title} onChange={(e) => setUnitForm({ ...unitForm, title: e.target.value })} placeholder="Unit 3" required /></label><label>副标题<input value={unitForm.subtitle} onChange={(e) => setUnitForm({ ...unitForm, subtitle: e.target.value })} placeholder="可选" /></label><button className="admin-primary" disabled={busy}>创建 Unit</button></form>
       <form className="admin-card" onSubmit={uploadVideo}><h2>上传视频</h2><label>视频标题<input value={videoForm.title} onChange={(e) => setVideoForm({ ...videoForm, title: e.target.value })} required /></label><label>所属 Unit<select value={videoForm.unitId} onChange={(e) => setVideoForm({ ...videoForm, unitId: e.target.value })} required>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.title}</option>)}</select></label><div className="form-row"><label>排序<input type="number" min="0" value={videoForm.sortOrder} onChange={(e) => setVideoForm({ ...videoForm, sortOrder: e.target.value })} /></label><label>状态<select value={videoForm.status} onChange={(e) => setVideoForm({ ...videoForm, status: e.target.value })}><option value="draft">草稿</option><option value="published">发布</option><option value="unlisted">不公开</option></select></label></div><label>MP4 文件<input type="file" accept="video/mp4,.mp4" onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} required /></label><button className="admin-primary" disabled={busy}>{busy ? "上传处理中…" : "上传视频"}</button></form></div>
-    <section className="admin-card table-card"><h2>视频列表</h2><div className="admin-table">{videos.map((video) => <div className="admin-row" key={video.id}><div className="row-poster">{video.posterUrl ? <img src={video.posterUrl} alt="" /> : "—"}</div><div className="row-main"><strong>{video.title}</strong><small>{video.unitSlug} · {video.originalFilename}</small></div><select value={video.status} onChange={(e) => setVideoStatus(video, e.target.value)}><option value="draft">草稿</option><option value="published">已发布</option><option value="unlisted">不公开</option><option value="deleted">已删除</option></select><label className="poster-upload">换封面<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadPoster(video, file); }} /></label></div>)}{videos.length === 0 ? <p className="admin-muted">还没有视频。</p> : null}</div></section>
+    <section className="admin-card table-card"><h2>视频列表</h2><div className="admin-table">{videos.map((video) => {
+      const uploadPreview = posterUploads[video.id];
+      const isUploading = Boolean(uploadPreview);
+      const posterSrc = uploadPreview ?? video.posterUrl;
+      return <div className="admin-row" key={video.id}>
+        <div className={`row-poster${isUploading ? " is-uploading" : ""}`} aria-busy={isUploading}>
+          {posterSrc ? <img src={posterSrc} alt="" /> : "—"}
+          {isUploading ? <span className="poster-loading-overlay" role="status"><span className="poster-spinner" aria-hidden="true" /><span className="sr-only">正在保存封面</span></span> : null}
+        </div>
+        <div className="row-main"><strong>{video.title}</strong><small>{video.unitSlug} · {video.originalFilename}</small></div>
+        <select value={video.status} onChange={(e) => setVideoStatus(video, e.target.value)} disabled={isUploading}><option value="draft">草稿</option><option value="published">已发布</option><option value="unlisted">不公开</option><option value="deleted">已删除</option></select>
+        <label className={`poster-upload${isUploading ? " is-uploading" : ""}`}>
+          <span>{isUploading ? "正在保存…" : "换封面"}</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp" disabled={isUploading} onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; if (file) void uploadPoster(video, file); }} />
+          {isUploading ? <span className="poster-progress" aria-hidden="true"><span /></span> : null}
+        </label>
+      </div>;
+    })}{videos.length === 0 ? <p className="admin-muted">还没有视频。</p> : null}</div></section>
   </div>;
 }

@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { CatalogResponse, PublicVideo } from "@kids-video/contracts";
 import AdminApp from "./admin";
 
+const ACTIVE_UNIT_STORAGE_KEY = "kids-video-active-unit";
+
+function readStoredUnit() {
+  try {
+    return window.localStorage.getItem(ACTIVE_UNIT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function formatDuration(durationMs: number | null) {
   if (!durationMs) return "学习视频";
   const minutes = Math.floor(durationMs / 60_000);
@@ -12,7 +22,7 @@ function formatDuration(durationMs: number | null) {
 export default function App() {
   if (window.location.pathname.startsWith("/admin")) return <AdminApp />;
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null);
-  const [activeUnit, setActiveUnit] = useState<string | null>(null);
+  const [activeUnit, setActiveUnit] = useState<string | null>(readStoredUnit);
   const [selected, setSelected] = useState<PublicVideo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,10 +34,19 @@ export default function App() {
       })
       .then((data) => {
         setCatalog(data);
-        setActiveUnit(data.units[0]?.slug ?? null);
+        setActiveUnit((current) => current && data.units.some((item) => item.slug === current) ? current : data.units[0]?.slug ?? null);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "目录暂时无法加载"));
   }, []);
+
+  useEffect(() => {
+    try {
+      if (activeUnit) window.localStorage.setItem(ACTIVE_UNIT_STORAGE_KEY, activeUnit);
+      else window.localStorage.removeItem(ACTIVE_UNIT_STORAGE_KEY);
+    } catch {
+      // Some privacy modes block localStorage; the page still works for this session.
+    }
+  }, [activeUnit]);
 
   const unit = useMemo(
     () => catalog?.units.find((item) => item.slug === activeUnit) ?? catalog?.units[0],
