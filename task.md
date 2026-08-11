@@ -274,7 +274,7 @@
 
 ### 10.4 CI/CD 镜像发布
 
-- [x] 增加 GitHub Actions 的类型检查、lint 和测试门禁。
+- [x] 增加 GitHub Actions 的类型检查、lint 和测试门禁（`main` 推送和版本 tag 均执行）。
 - [x] 推送 `v*.*.*` tag 时构建并发布 API、Web 两个 GHCR 镜像。
 - [x] 为 Docker Compose 增加可替换的镜像 tag 配置。
 - [x] 在 README 中记录 tag 发布和服务器拉取部署流程。

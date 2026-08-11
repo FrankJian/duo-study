@@ -61,6 +61,8 @@ npm run admin:create
 
 项目包含 [`.github/workflows/publish-docker.yml`](./.github/workflows/publish-docker.yml)。向 GitHub 推送符合 `v*.*.*` 的 tag 后，Workflow 会先执行类型检查、lint 和测试，然后发布两个 GHCR 镜像：
 
+向 `main` 分支推送代码时，Workflow 只执行类型检查、lint 和测试，不会发布镜像；只有推送版本 tag 时才会发布镜像。
+
 ```text
 ghcr.io/frankjian/duo-study-api:v1.0.0
 ghcr.io/frankjian/duo-study-web:v1.0.0
