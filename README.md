@@ -169,7 +169,7 @@ Web 服务器需要支持 MP4 的 HTTP Range 请求，并按 UTF-8 处理 URL �
 
 视频文件统一位于 `videos/unit1/` 和 `videos/unit2/`，封面帧位于 `posters/unit1/` 和 `posters/unit2/`。新增或替换视频后，需要同步修改 `videos.json` 中对应的 `order`、`title`、`file` 和 `poster`。文件名必须与实际文件名完全一致，包括空格、中文标点和大小写。
 
-封面图由 `ffmpeg` 从视频第 3 秒截取生成，当前使用 640px 宽 JPG。视频内容变化后需要重新生成对应封面。
+封面图由 `ffmpeg` 从视频第 3 秒截取生成，当前统一为 360×640 的竖屏 JPG，并保留视频画面的完整比例。视频内容变化后需要重新生成对应封面。
 
 重新生成全部封面：
 

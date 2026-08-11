@@ -65,7 +65,7 @@ try {
       const probe = await probeVideo(sourceVideo);
       fs.copyFileSync(sourceVideo, videoDestination);
       if (sourcePoster && fs.existsSync(sourcePoster)) {
-        await sharp(sourcePoster).rotate().resize(640, 360, { fit: "cover", position: "centre" }).webp({ quality: 82 }).toFile(posterDestination);
+        await sharp(sourcePoster).rotate().resize(360, 640, { fit: "contain", background: "#f4f7fb" }).webp({ quality: 82 }).toFile(posterDestination);
       }
       try {
         db.insert(videos).values({

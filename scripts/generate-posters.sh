@@ -34,7 +34,7 @@ find videos -type f -name '*.mp4' -print0 | while IFS= read -r -d '' video; do
     -ss 3 \
     -i "$video" \
     -frames:v 1 \
-    -vf 'scale=640:-2' \
+    -vf 'scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2:color=0xf4f7fb' \
     -q:v 4 \
     "$poster"
 

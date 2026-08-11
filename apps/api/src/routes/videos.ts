@@ -152,7 +152,7 @@ export function registerVideoRoutes(app: FastifyInstance) {
       if (part.file.truncated || fs.statSync(tempPath).size > config.maxImageBytes) throw new Error("封面文件超过大小限制");
       const metadata = await sharp(tempPath).metadata();
       if (!metadata.format || !["jpeg", "png", "webp"].includes(metadata.format)) throw new Error("封面格式必须是 JPG、PNG 或 WebP");
-      await sharp(tempPath).rotate().resize(640, 360, { fit: "cover", position: "centre" }).webp({ quality: 82 }).toFile(posterPath);
+      await sharp(tempPath).rotate().resize(360, 640, { fit: "contain", background: "#f4f7fb" }).webp({ quality: 82 }).toFile(posterPath);
       const previousPoster = current.posterKey ? path.join(mediaDirs.posters, current.posterKey) : null;
       db.update(videos).set({ posterKey, updatedAt: new Date() }).where(eq(videos.id, current.id)).run();
       if (previousPoster && fs.existsSync(previousPoster)) fs.renameSync(previousPoster, path.join(mediaDirs.trash, `${Date.now()}-${current.posterKey}`));

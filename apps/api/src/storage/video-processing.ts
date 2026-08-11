@@ -39,11 +39,12 @@ export async function probeVideo(filePath: string): Promise<VideoProbe> {
 
 export async function generatePoster(videoPath: string, posterPath: string) {
   fs.mkdirSync(path.dirname(posterPath), { recursive: true });
+  const posterFilter = "scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2:color=0xf4f7fb";
   const args = [
     "-hide_banner", "-loglevel", "error", "-y",
     "-ss", "3", "-i", videoPath,
     "-frames:v", "1",
-    "-vf", "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
+    "-vf", posterFilter,
     "-c:v", "libwebp", "-quality", "82", posterPath,
   ];
   try {
@@ -53,7 +54,7 @@ export async function generatePoster(videoPath: string, posterPath: string) {
       "-hide_banner", "-loglevel", "error", "-y",
       "-ss", "0.1", "-i", videoPath,
       "-frames:v", "1",
-      "-vf", "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
+      "-vf", posterFilter,
       "-c:v", "libwebp", "-quality", "82", posterPath,
     ], { maxBuffer: 1024 * 1024 });
   }
