@@ -50,6 +50,18 @@ export function registerUnitRoutes(app: FastifyInstance) {
     })));
   });
 
+  app.delete<{ Params: { id: string } }>("/api/admin/units/:id", async (request, reply) => {
+    const auth = requireAuth(request, reply);
+    if (!auth || !requireCsrf(request, reply, auth)) return;
+    const current = db.select().from(units).where(eq(units.id, request.params.id)).get();
+    if (!current) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "Unit 不存在" } });
+    const activeVideoCount = db.select({ id: videos.id }).from(videos).where(and(eq(videos.unitId, current.id), isNull(videos.deletedAt))).all().length;
+    if (activeVideoCount > 0) return reply.code(409).send({ error: { code: "UNIT_NOT_EMPTY", message: "请先删除该 Unit 下的视频，再删除 Unit" } });
+    db.update(units).set({ status: "archived", updatedAt: new Date() }).where(eq(units.id, current.id)).run();
+    writeAuditLog({ actorUserId: auth.user.id, action: "unit.archived", entityType: "unit", entityId: current.id });
+    return reply.send({ ok: true });
+  });
+
   app.post("/api/admin/units", async (request, reply) => {
     const auth = requireAuth(request, reply);
     if (!auth || !requireCsrf(request, reply, auth)) return;

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { User } from "@kids-video/contracts";
 
 type Unit = { id: string; slug: string; title: string; subtitle: string | null; status: string; sortOrder: number; videoCount: number };
-type Video = { id: string; title: string; unitId: string; unitSlug: string; status: string; posterUrl: string | null; fileSize: number; originalFilename: string };
+type Video = { id: string; title: string; unitId: string; unitSlug: string; status: string; sortOrder: number; posterUrl: string | null; fileSize: number; originalFilename: string };
 
 function csrf() {
   return document.cookie.split("; ").find((item) => item.startsWith("kids_csrf="))?.slice("kids_csrf=".length) ?? "";
@@ -16,6 +16,30 @@ async function api<T>(url: string, init?: RequestInit) {
   const body = await response.json().catch(() => null) as T & { error?: { message?: string } };
   if (!response.ok) throw new Error(body?.error?.message ?? "操作失败");
   return body;
+}
+
+type VideoUploadState = { phase: "idle" | "uploading" | "processing"; percent: number };
+
+function uploadWithProgress<T>(url: string, data: FormData, onProgress: (percent: number) => void, onUploadComplete: () => void) {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("x-csrf-token", csrf());
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.upload.onloadend = onUploadComplete;
+    xhr.onerror = () => reject(new Error("网络连接失败，请稍后重试"));
+    xhr.onabort = () => reject(new Error("上传已取消"));
+    xhr.onload = () => {
+      let body: (T & { error?: { message?: string } }) | null = null;
+      try { body = JSON.parse(xhr.responseText) as T & { error?: { message?: string } }; } catch { /* empty response */ }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(body as T);
+      reject(new Error(body?.error?.message ?? "上传失败"));
+    };
+    xhr.send(data);
+  });
 }
 
 export default function AdminApp() {
@@ -60,8 +84,17 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
   const [videoUnitFilter, setVideoUnitFilter] = useState("all");
   const [videoStatusFilter, setVideoStatusFilter] = useState("all");
   const [videoSearch, setVideoSearch] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { Promise.all([api<Unit[]>("/api/admin/units"), api<Video[]>("/api/admin/videos")]).then(([nextUnits, nextVideos]) => { setUnits(nextUnits); setVideos(nextVideos); setVideoForm((current) => ({ ...current, unitId: current.unitId || nextUnits[0]?.id || "" })); }).catch((reason) => setError(reason instanceof Error ? reason.message : "加载失败")); }, [refresh, setError]);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+  const [unitEditForm, setUnitEditForm] = useState({ slug: "", title: "", subtitle: "", sortOrder: "0", status: "draft" });
+  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+  const [videoEditForm, setVideoEditForm] = useState({ title: "", unitId: "", sortOrder: "0", status: "draft" });
+  const [busyAction, setBusyAction] = useState("");
+  const busy = Boolean(busyAction);
+  const [success, setSuccess] = useState("");
+  const [videoUpload, setVideoUpload] = useState<VideoUploadState>({ phase: "idle", percent: 0 });
+  function beginAction(action: string) { setBusyAction(action); setError(""); setSuccess(""); }
+  function endAction() { setBusyAction(""); }
+  useEffect(() => { Promise.all([api<Unit[]>("/api/admin/units"), api<Video[]>("/api/admin/videos?includeDeleted=true")]).then(([nextUnits, nextVideos]) => { setUnits(nextUnits); setVideos(nextVideos); setVideoForm((current) => ({ ...current, unitId: current.unitId || nextUnits.find((unit) => unit.status !== "archived")?.id || "" })); }).catch((reason) => setError(reason instanceof Error ? reason.message : "加载失败")); }, [refresh, setError]);
   const counts = useMemo(() => ({ videos: videos.length, drafts: videos.filter((item) => item.status === "draft").length }), [videos]);
   const filteredVideos = useMemo(() => {
     const search = videoSearch.trim().toLocaleLowerCase();
@@ -75,20 +108,30 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
   const videoGroups = useMemo(() => units
     .map((unit) => ({ unit, videos: filteredVideos.filter((video) => video.unitId === unit.id) }))
     .filter((group) => group.videos.length > 0), [filteredVideos, units]);
-  async function createUnit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(""); try { await api("/api/admin/units", { method: "POST", body: JSON.stringify({ ...unitForm, subtitle: unitForm.subtitle || null, sortOrder: units.length, status: "published" }) }); setUnitForm({ slug: "", title: "", subtitle: "" }); setRefresh((value) => value + 1); } catch (reason) { setError(reason instanceof Error ? reason.message : "Unit 创建失败"); } finally { setBusy(false); } }
-  async function uploadVideo(event: FormEvent) { event.preventDefault(); if (!videoFile) return setError("请选择视频文件"); setBusy(true); setError(""); const body = new FormData(); body.set("title", videoForm.title); body.set("unitId", videoForm.unitId); body.set("sortOrder", videoForm.sortOrder); body.set("status", videoForm.status); body.set("video", videoFile); try { await api("/api/admin/videos", { method: "POST", body }); setVideoFile(null); setVideoForm((current) => ({ ...current, title: "", sortOrder: "0" })); setRefresh((value) => value + 1); } catch (reason) { setError(reason instanceof Error ? reason.message : "上传失败"); } finally { setBusy(false); } }
-  async function logout() { try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } finally { onLoggedOut(); } }
-  async function setVideoStatus(video: Video, status: string) { try { await api(`/api/admin/videos/${video.id}`, { method: "PATCH", body: JSON.stringify({ status }) }); setRefresh((value) => value + 1); } catch (reason) { setError(reason instanceof Error ? reason.message : "状态更新失败"); } }
+  const editableUnits = units.filter((unit) => unit.status !== "archived");
+  async function createUnit(event: FormEvent) { event.preventDefault(); beginAction("create-unit"); try { await api("/api/admin/units", { method: "POST", body: JSON.stringify({ ...unitForm, subtitle: unitForm.subtitle || null, sortOrder: units.length, status: "published" }) }); setUnitForm({ slug: "", title: "", subtitle: "" }); setRefresh((value) => value + 1); setSuccess("Unit 创建成功"); } catch (reason) { setError(reason instanceof Error ? reason.message : "Unit 创建失败"); } finally { endAction(); } }
+  async function uploadVideo(event: FormEvent) { event.preventDefault(); if (!videoFile) { setSuccess(""); return setError("请选择视频文件"); } beginAction("upload-video"); setVideoUpload({ phase: "uploading", percent: 0 }); const body = new FormData(); body.set("title", videoForm.title); body.set("unitId", videoForm.unitId); body.set("sortOrder", videoForm.sortOrder); body.set("status", videoForm.status); body.set("video", videoFile); try { await uploadWithProgress("/api/admin/videos", body, (percent) => setVideoUpload({ phase: percent >= 100 ? "processing" : "uploading", percent }), () => setVideoUpload({ phase: "processing", percent: 100 })); setVideoFile(null); setVideoForm((current) => ({ ...current, title: "", sortOrder: "0" })); setRefresh((value) => value + 1); setSuccess("视频上传成功，已加入视频库"); } catch (reason) { setError(reason instanceof Error ? reason.message : "上传失败"); } finally { endAction(); setVideoUpload({ phase: "idle", percent: 0 }); } }
+  async function logout() { beginAction("logout"); try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch (reason) { setError(reason instanceof Error ? reason.message : "退出登录失败"); } finally { endAction(); onLoggedOut(); } }
+  async function setVideoStatus(video: Video, status: string) { beginAction(`video-status:${video.id}`); try { await api(`/api/admin/videos/${video.id}`, { method: "PATCH", body: JSON.stringify({ status }) }); setRefresh((value) => value + 1); setSuccess("视频状态已更新"); } catch (reason) { setError(reason instanceof Error ? reason.message : "状态更新失败"); } finally { endAction(); } }
+  function openUnitEditor(unit: Unit) { setEditingUnit(unit); setUnitEditForm({ slug: unit.slug, title: unit.title, subtitle: unit.subtitle ?? "", sortOrder: String(unit.sortOrder), status: unit.status }); }
+  async function saveUnit(event: FormEvent) { event.preventDefault(); if (!editingUnit) return; beginAction("unit-edit"); try { await api(`/api/admin/units/${editingUnit.id}`, { method: "PATCH", body: JSON.stringify({ slug: unitEditForm.slug, title: unitEditForm.title, subtitle: unitEditForm.subtitle || null, sortOrder: Number(unitEditForm.sortOrder), status: unitEditForm.status }) }); setEditingUnit(null); setRefresh((value) => value + 1); setSuccess("Unit 更新成功"); } catch (reason) { setError(reason instanceof Error ? reason.message : "Unit 更新失败"); } finally { endAction(); } }
+  async function deleteUnit(unit: Unit) { if (!window.confirm(`确定要删除 ${unit.title} 吗？删除后 Unit 会被归档。`)) return; beginAction(`unit-delete:${unit.id}`); try { await api(`/api/admin/units/${unit.id}`, { method: "DELETE" }); setRefresh((value) => value + 1); setSuccess("Unit 已归档"); } catch (reason) { setError(reason instanceof Error ? reason.message : "Unit 删除失败"); } finally { endAction(); } }
+  function openVideoEditor(video: Video) { setEditingVideo(video); setVideoEditForm({ title: video.title, unitId: video.unitId, sortOrder: String(video.sortOrder), status: video.status === "deleted" ? "draft" : video.status }); }
+  async function saveVideo(event: FormEvent) { event.preventDefault(); if (!editingVideo) return; beginAction("video-edit"); try { await api(`/api/admin/videos/${editingVideo.id}`, { method: "PATCH", body: JSON.stringify({ title: videoEditForm.title, unitId: videoEditForm.unitId, sortOrder: Number(videoEditForm.sortOrder), status: videoEditForm.status }) }); setEditingVideo(null); setRefresh((value) => value + 1); setSuccess("视频更新成功"); } catch (reason) { setError(reason instanceof Error ? reason.message : "视频更新失败"); } finally { endAction(); } }
+  async function deleteVideo(video: Video) { if (!window.confirm(`确定要删除视频“${video.title}”吗？视频会进入回收区。`)) return; beginAction(`video-delete:${video.id}`); try { await api(`/api/admin/videos/${video.id}`, { method: "DELETE" }); setRefresh((value) => value + 1); setSuccess("视频已移入回收区"); } catch (reason) { setError(reason instanceof Error ? reason.message : "视频删除失败"); } finally { endAction(); } }
+  async function restoreVideo(video: Video) { if (!window.confirm(`确定恢复视频“${video.title}”吗？恢复后会回到草稿状态。`)) return; beginAction(`video-restore:${video.id}`); try { await api(`/api/admin/videos/${video.id}/restore`, { method: "POST", body: "{}" }); setRefresh((value) => value + 1); setSuccess("视频已恢复为草稿"); } catch (reason) { setError(reason instanceof Error ? reason.message : "视频恢复失败"); } finally { endAction(); } }
   async function uploadPoster(video: Video, file: File) {
     const previewUrl = URL.createObjectURL(file);
     const body = new FormData();
     body.set("poster", file);
     setError("");
+    setSuccess("");
     setPosterUploads((current) => ({ ...current, [video.id]: previewUrl }));
     try {
       const result = await api<{ posterUrl: string }>(`/api/admin/videos/${video.id}/poster`, { method: "POST", body });
       setVideos((current) => current.map((item) => item.id === video.id ? { ...item, posterUrl: result.posterUrl } : item));
       setRefresh((value) => value + 1);
+      setSuccess("封面更新成功");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "封面上传失败");
     } finally {
@@ -100,25 +143,35 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
       });
     }
   }
-  return <div className="admin-page admin-dashboard"><header className="admin-header"><div><p className="admin-kicker">LEARNING LIBRARY</p><h1>内容管理</h1><p className="admin-muted">你好，{user.username} · {units.length} 个 Unit · {counts.videos} 个视频 · {counts.drafts} 个草稿</p></div><div className="admin-actions"><a className="back-link" href="/">查看公开页面</a><button className="admin-secondary" onClick={logout}>退出登录</button></div></header>
-    {error ? <div className="admin-error admin-banner">{error}</div> : null}
+  return <div className="admin-page admin-dashboard"><header className="admin-header"><div><p className="admin-kicker">LEARNING LIBRARY</p><h1>内容管理</h1><p className="admin-muted">你好，{user.username} · {units.length} 个 Unit · {counts.videos} 个视频 · {counts.drafts} 个草稿</p></div><div className="admin-actions"><a className="back-link" href="/">查看公开页面</a><button className="admin-secondary" onClick={logout} disabled={busy}>{busyAction === "logout" ? "退出中…" : "退出登录"}</button></div></header>
+    {error ? <div className="admin-error admin-banner" role="alert">{error}</div> : null}
+    {success ? <div className="admin-success admin-banner" role="status" aria-live="polite">{success}</div> : null}
     <div className="admin-columns">
       <form className="admin-card form-card" onSubmit={createUnit}>
         <div className="form-card-heading"><span className="form-icon form-icon-purple" aria-hidden="true">＋</span><div><p className="form-eyebrow">STRUCTURE</p><h2>新建 Unit</h2><p className="form-help">创建一个新的学习单元，后续可以在这里归类视频。</p></div></div>
         <label>Slug<input value={unitForm.slug} onChange={(e) => setUnitForm({ ...unitForm, slug: e.target.value })} placeholder="unit3" required /></label>
         <label>标题<input value={unitForm.title} onChange={(e) => setUnitForm({ ...unitForm, title: e.target.value })} placeholder="Unit 3" required /></label>
         <label>副标题<input value={unitForm.subtitle} onChange={(e) => setUnitForm({ ...unitForm, subtitle: e.target.value })} placeholder="可选" /></label>
-        <button className="admin-primary" disabled={busy}>创建 Unit</button>
+        <button className="admin-primary" disabled={busy}>{busyAction === "create-unit" ? "创建中…" : "创建 Unit"}</button>
       </form>
       <form className="admin-card form-card" onSubmit={uploadVideo}>
         <div className="form-card-heading"><span className="form-icon form-icon-blue" aria-hidden="true">↑</span><div><p className="form-eyebrow">NEW CONTENT</p><h2>上传视频</h2><p className="form-help">上传 MP4 后，系统会自动生成竖屏封面并保存到对应 Unit。</p></div></div>
         <label>视频标题<input value={videoForm.title} onChange={(e) => setVideoForm({ ...videoForm, title: e.target.value })} placeholder="例如：Big A, Little a" required /></label>
-        <label>所属 Unit<select value={videoForm.unitId} onChange={(e) => setVideoForm({ ...videoForm, unitId: e.target.value })} required>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.title}</option>)}</select></label>
+        <label>所属 Unit<select value={videoForm.unitId} onChange={(e) => setVideoForm({ ...videoForm, unitId: e.target.value })} required>{editableUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.title}</option>)}</select></label>
         <div className="form-row"><label>排序<input type="number" min="0" value={videoForm.sortOrder} onChange={(e) => setVideoForm({ ...videoForm, sortOrder: e.target.value })} /></label><label>状态<select value={videoForm.status} onChange={(e) => setVideoForm({ ...videoForm, status: e.target.value })}><option value="draft">草稿</option><option value="published">发布</option><option value="unlisted">不公开</option></select></label></div>
         <label>MP4 文件<input type="file" accept="video/mp4,.mp4" onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} required /></label>
-        <button className="admin-primary" disabled={busy}>{busy ? "上传处理中…" : "上传视频"}</button>
+        {videoUpload.phase !== "idle" ? <div className={`upload-progress${videoUpload.phase === "processing" ? " is-processing" : ""}`} role="status" aria-live="polite"><div className="upload-progress-meta"><span>{videoUpload.phase === "processing" ? "服务器处理中…" : "正在上传视频…"}</span><strong>{videoUpload.percent}%</strong></div><div className="upload-progress-track"><span style={{ width: `${videoUpload.percent}%` }} /></div><p>{videoUpload.phase === "processing" ? "正在校验视频并生成封面，请稍候。" : "文件较大时上传需要一些时间，请不要关闭页面。"}</p></div> : null}
+        <button className="admin-primary" disabled={busy}>{busyAction === "upload-video" ? (videoUpload.phase === "processing" ? "服务器处理中…" : `上传中 ${videoUpload.percent}%`) : "上传视频"}</button>
       </form>
     </div>
+    <section className="admin-card units-card">
+      <div className="library-heading"><div><p className="form-eyebrow">UNIT MANAGEMENT</p><h2>Unit 管理</h2><p className="form-help">编辑 Unit 信息、调整状态，或归档不再使用的 Unit。</p></div><span className="result-count">{units.length} 个 Unit</span></div>
+      <div className="unit-admin-grid">{units.map((unit) => <article className={`unit-admin-item${unit.status === "archived" ? " is-archived" : ""}`} key={unit.id}>
+        <div className="unit-admin-main"><span className="unit-slug">{unit.slug}</span><div><strong>{unit.title}</strong><small>{unit.subtitle || "暂无副标题"} · {unit.videoCount} 个视频</small></div></div>
+        <span className={`unit-status unit-status-${unit.status}`}>{unit.status === "published" ? "已发布" : unit.status === "draft" ? "草稿" : "已归档"}</span>
+        <div className="unit-admin-actions"><button className="table-action" type="button" onClick={() => openUnitEditor(unit)} disabled={busy}>编辑</button>{unit.status === "archived" ? null : <button className="table-action table-action-danger" type="button" onClick={() => void deleteUnit(unit)} disabled={busy}>{busyAction === `unit-delete:${unit.id}` ? "归档中…" : "删除"}</button>}</div>
+      </article>)}</div>
+    </section>
     <section className="admin-card table-card">
       <div className="library-heading"><div><p className="form-eyebrow">CONTENT LIBRARY</p><h2>视频库</h2><p className="form-help">按 Unit 分组管理内容，也可以快速筛选和搜索。</p></div><span className="result-count">显示 {filteredVideos.length} / {videos.length}</span></div>
       <div className="library-filters">
@@ -137,16 +190,43 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
               {posterSrc ? <img src={posterSrc} alt="" /> : "—"}
               {isUploading ? <span className="poster-loading-overlay" role="status"><span className="poster-spinner" aria-hidden="true" /><span className="sr-only">正在保存封面</span></span> : null}
             </div>
-            <div className="row-main"><strong>{video.title}</strong><small>{video.originalFilename}</small></div>
-            <select value={video.status} onChange={(e) => setVideoStatus(video, e.target.value)} disabled={isUploading}><option value="draft">草稿</option><option value="published">已发布</option><option value="unlisted">不公开</option><option value="deleted">已删除</option></select>
-            <label className={`poster-upload${isUploading ? " is-uploading" : ""}`}>
-              <span>{isUploading ? "正在保存…" : "换封面"}</span>
-              <input type="file" accept="image/jpeg,image/png,image/webp" disabled={isUploading} onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; if (file) void uploadPoster(video, file); }} />
-              {isUploading ? <span className="poster-progress" aria-hidden="true"><span /></span> : null}
-            </label>
+            <div className="row-main"><strong>{video.title}</strong><small>{video.originalFilename} · 排序 {video.sortOrder}</small></div>
+            {video.status === "deleted"
+              ? <span className="unit-status unit-status-archived">已删除</span>
+              : <div className="status-control"><select value={video.status} onChange={(e) => void setVideoStatus(video, e.target.value)} disabled={isUploading || busy}><option value="draft">草稿</option><option value="published">已发布</option><option value="unlisted">不公开</option></select>{busyAction === `video-status:${video.id}` ? <span className="inline-feedback">保存中…</span> : null}</div>}
+            <div className="row-actions">
+              {video.status === "deleted"
+                ? <button className="table-action" type="button" onClick={() => void restoreVideo(video)} disabled={busy}>{busyAction === `video-restore:${video.id}` ? "恢复中…" : "恢复"}</button>
+                : <button className="table-action" type="button" onClick={() => openVideoEditor(video)} disabled={busy}>编辑</button>}
+              {video.status !== "deleted" ? <button className="table-action table-action-danger" type="button" onClick={() => void deleteVideo(video)} disabled={busy}>{busyAction === `video-delete:${video.id}` ? "删除中…" : "删除"}</button> : null}
+              {video.status !== "deleted" ? <label className={`poster-upload${isUploading ? " is-uploading" : ""}`}>
+                <span>{isUploading ? "正在保存…" : "换封面"}</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" disabled={isUploading} onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; if (file) void uploadPoster(video, file); }} />
+                {isUploading ? <span className="poster-progress" aria-hidden="true"><span /></span> : null}
+              </label> : null}
+            </div>
           </div>;
         })}</div>
       </section>)}{filteredVideos.length === 0 ? <div className="empty-library"><span className="empty-library-icon" aria-hidden="true">⌕</span><strong>没有匹配的视频</strong><p>试试清除搜索内容或调整筛选条件。</p></div> : null}</div>
     </section>
+    {editingUnit ? <div className="admin-modal-backdrop" role="presentation" onClick={() => setEditingUnit(null)}>
+      <form className="admin-card admin-modal" onSubmit={saveUnit} onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header"><div><p className="form-eyebrow">EDIT UNIT</p><h2>编辑 Unit</h2><p className="form-help">修改 Unit 的展示信息、排序和发布状态。</p></div><button className="close-button admin-close-button" type="button" aria-label="关闭" onClick={() => setEditingUnit(null)}>×</button></div>
+        <label>Slug<input value={unitEditForm.slug} onChange={(e) => setUnitEditForm({ ...unitEditForm, slug: e.target.value })} required /></label>
+        <label>标题<input value={unitEditForm.title} onChange={(e) => setUnitEditForm({ ...unitEditForm, title: e.target.value })} required /></label>
+        <label>副标题<input value={unitEditForm.subtitle} onChange={(e) => setUnitEditForm({ ...unitEditForm, subtitle: e.target.value })} /></label>
+        <div className="form-row"><label>排序<input type="number" min="0" value={unitEditForm.sortOrder} onChange={(e) => setUnitEditForm({ ...unitEditForm, sortOrder: e.target.value })} /></label><label>状态<select value={unitEditForm.status} onChange={(e) => setUnitEditForm({ ...unitEditForm, status: e.target.value })}><option value="draft">草稿</option><option value="published">已发布</option><option value="archived">已归档</option></select></label></div>
+        <div className="modal-actions"><button className="admin-secondary" type="button" onClick={() => setEditingUnit(null)} disabled={busy}>取消</button><button className="admin-primary" disabled={busy}>{busyAction === "unit-edit" ? "保存中…" : "保存 Unit"}</button></div>
+      </form>
+    </div> : null}
+    {editingVideo ? <div className="admin-modal-backdrop" role="presentation" onClick={() => setEditingVideo(null)}>
+      <form className="admin-card admin-modal" onSubmit={saveVideo} onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header"><div><p className="form-eyebrow">EDIT VIDEO</p><h2>编辑视频</h2><p className="form-help">修改标题、所属 Unit、排序和发布状态。</p></div><button className="close-button admin-close-button" type="button" aria-label="关闭" onClick={() => setEditingVideo(null)}>×</button></div>
+        <label>视频标题<input value={videoEditForm.title} onChange={(e) => setVideoEditForm({ ...videoEditForm, title: e.target.value })} required /></label>
+        <label>所属 Unit<select value={videoEditForm.unitId} onChange={(e) => setVideoEditForm({ ...videoEditForm, unitId: e.target.value })} required>{units.filter((unit) => unit.status !== "archived" || unit.id === editingVideo.unitId).map((unit) => <option key={unit.id} value={unit.id}>{unit.title}</option>)}</select></label>
+        <div className="form-row"><label>排序<input type="number" min="0" value={videoEditForm.sortOrder} onChange={(e) => setVideoEditForm({ ...videoEditForm, sortOrder: e.target.value })} /></label><label>状态<select value={videoEditForm.status} onChange={(e) => setVideoEditForm({ ...videoEditForm, status: e.target.value })}><option value="draft">草稿</option><option value="published">已发布</option><option value="unlisted">不公开</option></select></label></div>
+        <div className="modal-actions"><button className="admin-secondary" type="button" onClick={() => setEditingVideo(null)} disabled={busy}>取消</button><button className="admin-primary" disabled={busy}>{busyAction === "video-edit" ? "保存中…" : "保存视频"}</button></div>
+      </form>
+    </div> : null}
   </div>;
 }

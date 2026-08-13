@@ -31,8 +31,8 @@ function serializeVideo(video: typeof videos.$inferSelect, unitSlug?: string) {
 export function registerVideoRoutes(app: FastifyInstance) {
   app.get("/api/admin/videos", async (request, reply) => {
     if (!requireAuth(request, reply)) return;
-    const query = request.query as { unitId?: string; status?: string };
-    const predicates = [isNull(videos.deletedAt)];
+    const query = request.query as { unitId?: string; status?: string; includeDeleted?: string };
+    const predicates = query.includeDeleted === "true" ? [] : [isNull(videos.deletedAt)];
     if (query.unitId) predicates.push(eq(videos.unitId, query.unitId));
     if (query.status && videoStatusSchema.safeParse(query.status).success) predicates.push(eq(videos.status, query.status as typeof videos.$inferSelect.status));
     const rows = db
@@ -121,6 +121,7 @@ export function registerVideoRoutes(app: FastifyInstance) {
     const auth = requireAuth(request, reply);
     if (!auth || !requireCsrf(request, reply, auth)) return;
     const body = request.body as Partial<{ title: string; unitId: string; sortOrder: number; status: string }>;
+    if (body?.status === "deleted") return reply.code(400).send({ error: { code: "USE_DELETE_ENDPOINT", message: "请使用删除操作处理视频" } });
     const updates: Partial<typeof videos.$inferInsert> = { updatedAt: new Date() };
     if (typeof body.title === "string" && body.title.trim()) updates.title = body.title.trim();
     if (typeof body.unitId === "string") updates.unitId = body.unitId;
