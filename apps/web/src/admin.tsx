@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@kids-video/contracts";
 
 type Unit = { id: string; slug: string; title: string; subtitle: string | null; status: string; sortOrder: number; videoCount: number };
@@ -18,7 +18,7 @@ async function api<T>(url: string, init?: RequestInit) {
   return body;
 }
 
-type VideoUploadState = { phase: "idle" | "uploading" | "processing"; percent: number };
+type VideoUploadJob = { id: string; title: string; phase: "queued" | "uploading" | "processing" | "success" | "error"; percent: number; message?: string };
 
 function uploadWithProgress<T>(url: string, data: FormData, onProgress: (percent: number) => void, onUploadComplete: () => void) {
   return new Promise<T>((resolve, reject) => {
@@ -91,9 +91,28 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
   const [busyAction, setBusyAction] = useState("");
   const busy = Boolean(busyAction);
   const [success, setSuccess] = useState("");
-  const [videoUpload, setVideoUpload] = useState<VideoUploadState>({ phase: "idle", percent: 0 });
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
+  const [videoUploads, setVideoUploads] = useState<VideoUploadJob[]>([]);
+  const uploadQueueRef = useRef<string[]>([]);
+  const uploadTasksRef = useRef(new Map<string, { title: string; body: FormData }>());
+  const activeUploadRef = useRef<string | null>(null);
   function beginAction(action: string) { setBusyAction(action); setError(""); setSuccess(""); }
   function endAction() { setBusyAction(""); }
+  function updateVideoUpload(id: string, patch: Partial<VideoUploadJob>) { setVideoUploads((current) => current.map((job) => job.id === id ? { ...job, ...patch } : job)); }
+  function processNextVideoUpload() {
+    if (activeUploadRef.current) return;
+    const nextId = uploadQueueRef.current.shift();
+    if (!nextId) return;
+    const task = uploadTasksRef.current.get(nextId);
+    if (!task) return processNextVideoUpload();
+    activeUploadRef.current = nextId;
+    updateVideoUpload(nextId, { phase: "uploading", percent: 0 });
+    void runVideoUpload(nextId, task.title, task.body).finally(() => {
+      uploadTasksRef.current.delete(nextId);
+      activeUploadRef.current = null;
+      processNextVideoUpload();
+    });
+  }
   useEffect(() => { Promise.all([api<Unit[]>("/api/admin/units"), api<Video[]>("/api/admin/videos?includeDeleted=true")]).then(([nextUnits, nextVideos]) => { setUnits(nextUnits); setVideos(nextVideos); setVideoForm((current) => ({ ...current, unitId: current.unitId || nextUnits.find((unit) => unit.status !== "archived")?.id || "" })); }).catch((reason) => setError(reason instanceof Error ? reason.message : "加载失败")); }, [refresh, setError]);
   const counts = useMemo(() => ({ videos: videos.length, drafts: videos.filter((item) => item.status === "draft").length }), [videos]);
   const filteredVideos = useMemo(() => {
@@ -110,7 +129,42 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
     .filter((group) => group.videos.length > 0), [filteredVideos, units]);
   const editableUnits = units.filter((unit) => unit.status !== "archived");
   async function createUnit(event: FormEvent) { event.preventDefault(); beginAction("create-unit"); try { await api("/api/admin/units", { method: "POST", body: JSON.stringify({ ...unitForm, subtitle: unitForm.subtitle || null, sortOrder: units.length, status: "published" }) }); setUnitForm({ slug: "", title: "", subtitle: "" }); setRefresh((value) => value + 1); setSuccess("Unit 创建成功"); } catch (reason) { setError(reason instanceof Error ? reason.message : "Unit 创建失败"); } finally { endAction(); } }
-  async function uploadVideo(event: FormEvent) { event.preventDefault(); if (!videoFile) { setSuccess(""); return setError("请选择视频文件"); } beginAction("upload-video"); setVideoUpload({ phase: "uploading", percent: 0 }); const body = new FormData(); body.set("title", videoForm.title); body.set("unitId", videoForm.unitId); body.set("sortOrder", videoForm.sortOrder); body.set("status", videoForm.status); body.set("video", videoFile); try { await uploadWithProgress("/api/admin/videos", body, (percent) => setVideoUpload({ phase: percent >= 100 ? "processing" : "uploading", percent }), () => setVideoUpload({ phase: "processing", percent: 100 })); setVideoFile(null); setVideoForm((current) => ({ ...current, title: "", sortOrder: "0" })); setRefresh((value) => value + 1); setSuccess("视频上传成功，已加入视频库"); } catch (reason) { setError(reason instanceof Error ? reason.message : "上传失败"); } finally { endAction(); setVideoUpload({ phase: "idle", percent: 0 }); } }
+  function uploadVideo(event: FormEvent) {
+    event.preventDefault();
+    if (!videoFile) { setSuccess(""); return setError("请选择视频文件"); }
+    const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const uploadTitle = videoForm.title.trim() || videoFile.name;
+    const body = new FormData();
+    body.set("title", videoForm.title);
+    body.set("unitId", videoForm.unitId);
+    body.set("sortOrder", videoForm.sortOrder);
+    body.set("status", videoForm.status);
+    body.set("video", videoFile);
+    setError("");
+    const queued = Boolean(activeUploadRef.current || uploadQueueRef.current.length);
+    setSuccess(queued ? `已加入上传队列：${uploadTitle}` : `已开始上传：${uploadTitle}`);
+    setVideoUploads((current) => [...current, { id: uploadId, title: uploadTitle, phase: "queued", percent: 0 }]);
+    uploadQueueRef.current.push(uploadId);
+    uploadTasksRef.current.set(uploadId, { title: uploadTitle, body });
+    setVideoFile(null);
+    setVideoForm((current) => ({ ...current, title: "", sortOrder: "0" }));
+    if (videoFileInputRef.current) videoFileInputRef.current.value = "";
+    processNextVideoUpload();
+  }
+  async function runVideoUpload(uploadId: string, uploadTitle: string, body: FormData) {
+    try {
+      await uploadWithProgress("/api/admin/videos", body, (percent) => updateVideoUpload(uploadId, { phase: percent >= 100 ? "processing" : "uploading", percent }), () => updateVideoUpload(uploadId, { phase: "processing", percent: 100 }));
+      updateVideoUpload(uploadId, { phase: "success", percent: 100, message: "上传成功，已加入视频库" });
+      setRefresh((value) => value + 1);
+      setError("");
+      setSuccess(`视频上传成功：${uploadTitle}`);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "上传失败";
+      updateVideoUpload(uploadId, { phase: "error", message });
+      setSuccess("");
+      setError(`${uploadTitle}：${message}`);
+    }
+  }
   async function logout() { beginAction("logout"); try { await api("/api/auth/logout", { method: "POST", body: "{}" }); } catch (reason) { setError(reason instanceof Error ? reason.message : "退出登录失败"); } finally { endAction(); onLoggedOut(); } }
   async function setVideoStatus(video: Video, status: string) { beginAction(`video-status:${video.id}`); try { await api(`/api/admin/videos/${video.id}`, { method: "PATCH", body: JSON.stringify({ status }) }); setRefresh((value) => value + 1); setSuccess("视频状态已更新"); } catch (reason) { setError(reason instanceof Error ? reason.message : "状态更新失败"); } finally { endAction(); } }
   function openUnitEditor(unit: Unit) { setEditingUnit(unit); setUnitEditForm({ slug: unit.slug, title: unit.title, subtitle: unit.subtitle ?? "", sortOrder: String(unit.sortOrder), status: unit.status }); }
@@ -155,13 +209,13 @@ function Dashboard({ user, onLoggedOut, error, setError }: { user: User; onLogge
         <button className="admin-primary" disabled={busy}>{busyAction === "create-unit" ? "创建中…" : "创建 Unit"}</button>
       </form>
       <form className="admin-card form-card" onSubmit={uploadVideo}>
-        <div className="form-card-heading"><span className="form-icon form-icon-blue" aria-hidden="true">↑</span><div><p className="form-eyebrow">NEW CONTENT</p><h2>上传视频</h2><p className="form-help">上传 MP4 后，系统会自动生成竖屏封面并保存到对应 Unit。</p></div></div>
+        <div className="form-card-heading"><span className="form-icon form-icon-blue" aria-hidden="true">↑</span><div><p className="form-eyebrow">NEW CONTENT</p><h2>上传视频</h2><p className="form-help">可以连续添加多个视频任务，系统会按顺序上传并自动生成竖屏封面。</p></div></div>
         <label>视频标题<input value={videoForm.title} onChange={(e) => setVideoForm({ ...videoForm, title: e.target.value })} placeholder="例如：Big A, Little a" required /></label>
         <label>所属 Unit<select value={videoForm.unitId} onChange={(e) => setVideoForm({ ...videoForm, unitId: e.target.value })} required>{editableUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.title}</option>)}</select></label>
         <div className="form-row"><label>排序<input type="number" min="0" value={videoForm.sortOrder} onChange={(e) => setVideoForm({ ...videoForm, sortOrder: e.target.value })} /></label><label>状态<select value={videoForm.status} onChange={(e) => setVideoForm({ ...videoForm, status: e.target.value })}><option value="draft">草稿</option><option value="published">发布</option><option value="unlisted">不公开</option></select></label></div>
-        <label>MP4 文件<input type="file" accept="video/mp4,.mp4" onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} required /></label>
-        {videoUpload.phase !== "idle" ? <div className={`upload-progress${videoUpload.phase === "processing" ? " is-processing" : ""}`} role="status" aria-live="polite"><div className="upload-progress-meta"><span>{videoUpload.phase === "processing" ? "服务器处理中…" : "正在上传视频…"}</span><strong>{videoUpload.percent}%</strong></div><div className="upload-progress-track"><span style={{ width: `${videoUpload.percent}%` }} /></div><p>{videoUpload.phase === "processing" ? "正在校验视频并生成封面，请稍候。" : "文件较大时上传需要一些时间，请不要关闭页面。"}</p></div> : null}
-        <button className="admin-primary" disabled={busy}>{busyAction === "upload-video" ? (videoUpload.phase === "processing" ? "服务器处理中…" : `上传中 ${videoUpload.percent}%`) : "上传视频"}</button>
+        <label>MP4 文件<input ref={videoFileInputRef} type="file" accept="video/mp4,.mp4" onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} required /></label>
+        {videoUploads.length > 0 ? <div className="upload-queue" role="status" aria-live="polite"><div className="upload-queue-heading"><span>上传队列</span><span>{videoUploads.filter((job) => job.phase === "uploading" || job.phase === "processing").length} 个进行中 · {videoUploads.filter((job) => job.phase === "queued").length} 个排队中</span></div>{videoUploads.map((job) => { const active = job.phase === "uploading" || job.phase === "processing"; return <div className={`upload-job upload-job-${job.phase}`} key={job.id}><div className="upload-job-meta"><strong title={job.title}>{job.title}</strong><span>{job.phase === "queued" ? "等待上传" : job.phase === "uploading" ? `上传中 ${job.percent}%` : job.phase === "processing" ? "服务器处理中…" : job.phase === "success" ? "已完成" : "上传失败"}</span></div>{active ? <div className="upload-progress-track"><span style={{ width: `${job.percent}%` }} /></div> : null}{job.phase === "queued" ? <p>前一个视频完成后自动开始。</p> : null}{job.phase === "processing" ? <p>正在校验视频并生成封面，请稍候。</p> : null}{job.phase === "error" ? <p>{job.message}</p> : null}</div>; })}</div> : null}
+        <button className="admin-primary" disabled={busy}>{busy ? "请等待当前操作…" : "开始上传视频"}</button>
       </form>
     </div>
     <section className="admin-card units-card">
