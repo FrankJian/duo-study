@@ -59,13 +59,13 @@ npm run admin:create
 
 ## 发布 Docker 镜像
 
-项目包含 [`.github/workflows/publish-docker.yml`](./.github/workflows/publish-docker.yml)。向 GitHub 推送符合 `v*.*.*` 的 tag 后，Workflow 会先执行类型检查、lint 和测试，然后发布两个 GHCR 镜像：
+项目包含 [`.github/workflows/publish-docker.yml`](./.github/workflows/publish-docker.yml)。向 GitHub 推送符合 `v*.*.*` 的 Git tag 后，Workflow 会先执行类型检查、lint 和测试，然后只发布对应的精确版本 GHCR 镜像 tag。比如 Git tag 是 `v1.0.4`，镜像 tag 是 `1.0.4`，不会额外发布 `v1.0.4`、`1.0`、`1` 或 `latest`：
 
 向 `main` 分支推送代码时，Workflow 只执行类型检查、lint 和测试，不会发布镜像；只有推送版本 tag 时才会发布镜像。
 
 ```text
-ghcr.io/frankjian/duo-study-api:v1.0.0
-ghcr.io/frankjian/duo-study-web:v1.0.0
+ghcr.io/frankjian/duo-study-api:1.0.4
+ghcr.io/frankjian/duo-study-web:1.0.4
 ```
 
 当前 Workflow 发布 `linux/amd64` 镜像；如果服务器是 ARM 架构，需要在 workflow 的 `platforms` 中增加 `linux/arm64` 并重新发布多架构镜像。
@@ -74,10 +74,10 @@ ghcr.io/frankjian/duo-study-web:v1.0.0
 
 ```bash
 git add .
-git commit -m "release: v1.0.0"
-git tag -a v1.0.0 -m "v1.0.0"
+git commit -m "release: v1.0.4"
+git tag -a v1.0.4 -m "v1.0.4"
 git push origin main
-git push origin v1.0.0
+git push origin v1.0.4
 ```
 
 Workflow 使用 GitHub Actions 自带的 `GITHUB_TOKEN` 写入 GHCR，不需要额外配置密码。仓库的 Actions 需要允许 workflow 写入 packages；如果仓库设置覆盖了 workflow 权限，请在 GitHub 的 Actions 设置中开启读写权限。
@@ -124,7 +124,7 @@ docker compose up -d
 发布新 tag 后升级：
 
 ```bash
-# 先把 .env 中的 API_IMAGE、WEB_IMAGE 改成新的版本，例如 v1.1.0
+# 先把 .env 中的 API_IMAGE、WEB_IMAGE 改成新的版本，例如 1.1.0
 docker compose pull
 docker compose run --rm api npm run db:migrate
 docker compose up -d
