@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { CatalogResponse, PublicVideo } from "@kids-video/contracts";
 import AdminApp from "./admin";
 
@@ -19,8 +19,67 @@ function formatDuration(durationMs: number | null) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+type SiteAccessState = { enabled: boolean; authenticated: boolean };
+
 export default function App() {
   if (window.location.pathname.startsWith("/admin")) return <AdminApp />;
+  return <PublicApp />;
+}
+
+function PublicApp() {
+  const [access, setAccess] = useState<SiteAccessState | null>(null);
+  const [error, setError] = useState("");
+  const handleAccessExpired = useCallback(() => setAccess((current) => current ? { ...current, authenticated: false } : current), []);
+
+  useEffect(() => {
+    fetch("/api/site-auth/me", { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("暂时无法检查登录状态");
+        return (await response.json()) as SiteAccessState;
+      })
+      .then((state) => setAccess(state))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "暂时无法检查登录状态"));
+  }, []);
+
+  if (!access) {
+    if (error) return <VisitorLogin error={error} setError={setError} onLoggedIn={() => { setError(""); setAccess({ enabled: true, authenticated: true }); }} />;
+    return <main className="access-page"><div className="access-card"><div className="access-icon" aria-hidden="true">🌈</div><h1>小朋友的学习乐园</h1><p>正在检查访问权限…</p></div></main>;
+  }
+  if (access.enabled && !access.authenticated) return <VisitorLogin error={error} setError={setError} onLoggedIn={() => { setError(""); setAccess({ ...access, authenticated: true }); }} />;
+  return <CatalogPage onAccessExpired={handleAccessExpired} />;
+}
+
+function VisitorLogin({ error, setError, onLoggedIn }: { error: string; setError: (value: string) => void; onLoggedIn: () => void }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/site-auth/login", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ password }) });
+      const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(body?.error?.message ?? "登录失败");
+      onLoggedIn();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "登录失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <main className="access-page"><form className="access-card" onSubmit={submit}>
+    <div className="access-icon" aria-hidden="true">🔒</div>
+    <p className="eyebrow">WELCOME BACK</p>
+    <h1>进入学习乐园</h1>
+    <p className="access-copy">请输入家庭访问密码，登录后浏览学习视频。</p>
+    <label className="access-label">访问密码<input className="access-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" autoFocus required /></label>
+    {error ? <p className="access-error" role="alert">{error}</p> : null}
+    <button className="access-submit" disabled={busy}>{busy ? "登录中…" : "进入学习"}</button>
+    <p className="access-note">本设备登录状态会保留一段时间，下次打开通常无需再次输入。</p>
+  </form></main>;
+}
+
+function CatalogPage({ onAccessExpired }: { onAccessExpired: () => void }) {
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null);
   const [activeUnit, setActiveUnit] = useState<string | null>(readStoredUnit);
   const [selected, setSelected] = useState<PublicVideo | null>(null);
@@ -29,6 +88,10 @@ export default function App() {
   useEffect(() => {
     fetch("/api/catalog")
       .then(async (response) => {
+        if (response.status === 401) {
+          onAccessExpired();
+          throw new Error("请重新登录后继续访问");
+        }
         if (!response.ok) throw new Error("目录暂时无法加载");
         return (await response.json()) as CatalogResponse;
       })
@@ -37,7 +100,7 @@ export default function App() {
         setActiveUnit((current) => current && data.units.some((item) => item.slug === current) ? current : data.units[0]?.slug ?? null);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "目录暂时无法加载"));
-  }, []);
+  }, [onAccessExpired]);
 
   useEffect(() => {
     try {

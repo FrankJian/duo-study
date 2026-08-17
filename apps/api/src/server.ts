@@ -6,11 +6,13 @@ import rateLimit from "@fastify/rate-limit";
 import multipart from "@fastify/multipart";
 import { catalogResponseSchema } from "@kids-video/contracts";
 import { loadAuth } from "./auth/session.js";
+import { requireSiteAccess } from "./auth/site-access.js";
 import { config } from "./config.js";
 import { isDatabaseMigrated } from "./db/client.js";
 import { listPublishedCatalog } from "./db/repositories.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerMediaRoutes } from "./routes/media.js";
+import { registerSiteAuthRoutes } from "./routes/site-auth.js";
 import { registerUnitRoutes } from "./routes/units.js";
 import { registerVideoRoutes } from "./routes/videos.js";
 import { ensureMediaDirectories } from "./storage/directories.js";
@@ -37,6 +39,7 @@ export function buildServer() {
   });
 
   void registerAuthRoutes(app);
+  registerSiteAuthRoutes(app);
   registerUnitRoutes(app);
   registerMediaRoutes(app);
   registerVideoRoutes(app);
@@ -52,6 +55,7 @@ export function buildServer() {
   });
 
   app.get("/api/catalog", async (request, reply) => {
+    if (!requireSiteAccess(request, reply)) return;
     const units = listPublishedCatalog().map((unit) => ({
       id: unit.id,
       slug: unit.slug,
@@ -73,7 +77,8 @@ export function buildServer() {
     const etag = `"${createHash("sha256").update(JSON.stringify(units)).digest("hex")}"`;
     if (request.headers["if-none-match"] === etag) return reply.code(304).header("etag", etag).send();
     const payload = catalogResponseSchema.parse({ units, generatedAt: new Date().toISOString() });
-    return reply.header("etag", etag).header("cache-control", "public, max-age=30, stale-while-revalidate=120").send(payload);
+    const cacheControl = config.siteAccessPassword ? "private, no-store" : "public, max-age=30, stale-while-revalidate=120";
+    return reply.header("etag", etag).header("cache-control", cacheControl).send(payload);
   });
 
   app.setErrorHandler((error, request, reply) => {

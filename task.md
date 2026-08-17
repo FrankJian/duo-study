@@ -102,6 +102,15 @@
 - [ ] 覆盖 CSRF 缺失或错误。
 - [ ] 验证响应和日志不泄露密码或 token。
 
+### 3.5 首页访问认证
+
+- [x] 实现共享访问密码配置。
+- [x] 实现访客登录、持久 Cookie 和登录状态查询。
+- [x] 保护 catalog、Unit API 和已发布媒体地址。
+- [x] 首页增加非管理员登录页和登录中/错误反馈。
+- [x] 添加 `noindex`、`X-Robots-Tag` 和 `robots.txt`。
+- [ ] 覆盖访问密码错误、Cookie 过期和未登录媒体访问测试。
+
 ## 4. Unit API
 
 - [x] 定义 Unit Zod 请求和响应 schema。
@@ -172,6 +181,7 @@
 ## 7. 公开 API
 
 - [x] 实现 `GET /api/catalog`。
+- [x] 配置首页访问密码后，catalog 需要访客访问会话。
 - [x] 只返回已发布 Unit 下的已发布视频。
 - [x] 按 `sortOrder` 数字排序。
 - [x] 返回 `/media/...` 视频和封面 URL。

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { unitInputSchema, unitPatchSchema, unitStatusPatchSchema } from "@kids-video/contracts";
 import { requireAuth, requireCsrf } from "../auth/session.js";
+import { requireSiteAccess } from "../auth/site-access.js";
 import { db } from "../db/client.js";
 import { writeAuditLog } from "../db/repositories.js";
 import { units, videos } from "../db/schema.js";
@@ -13,6 +14,7 @@ function errorMessage(error: unknown) {
 
 export function registerUnitRoutes(app: FastifyInstance) {
   app.get<{ Params: { slug: string } }>("/api/units/:slug", async (request, reply) => {
+    if (!requireSiteAccess(request, reply)) return;
     const unit = db.select().from(units).where(and(eq(units.slug, request.params.slug), eq(units.status, "published"))).get();
     if (!unit) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "课程不存在" } });
     const publishedVideos = db

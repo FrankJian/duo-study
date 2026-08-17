@@ -9,6 +9,7 @@
 - `apps/api` 是 Fastify/TypeScript API 骨架，已包含 SQLite/Drizzle 数据模型、健康检查和公开目录接口。
 - `packages/contracts` 保存前后端共享的 Zod schema。
 - 视频源文件仍统一放在 `videos/`，新的运行时上传数据放在 `data/`（已加入 `.gitignore`）。
+- 公开首页支持可选的共享访问密码；启用后，目录 API、Unit API 和媒体地址都会要求登录，搜索引擎也会收到 `noindex`。
 
 ## 文件结构
 
@@ -43,6 +44,7 @@ python3 -m http.server 8080
 ```bash
 npm install
 cp .env.example .env
+# 如需保护首页内容，在 .env 中设置 SITE_ACCESS_PASSWORD
 npm run db:migrate
 npm run dev
 ```
@@ -55,7 +57,13 @@ npm run dev
 npm run admin:create
 ```
 
-命令会在终端中隐藏密码输入，不接受命令行明文密码。管理后台地址为 `/admin`，未登录用户只能看到登录页；公开页面仍然无需登录。
+命令会在终端中隐藏密码输入，不接受命令行明文密码。管理后台地址为 `/admin`，未登录用户只能看到登录页；公开首页是否需要访问密码由 `SITE_ACCESS_PASSWORD` 决定。
+
+### 首页访问登录
+
+首页登录与管理员登录是两套独立机制。设置 `SITE_ACCESS_PASSWORD` 后，访问首页需要输入共享访问密码；登录成功后服务端会写入持久 Cookie，默认 30 天内通常不需要再次登录。`SITE_ACCESS_SECRET` 可选，用于签名 Cookie；生产环境建议设置为独立的随机长字符串。
+
+访客登录会保护 `/api/catalog`、`/api/units/*` 和 `/media/*` 的已发布内容，不能只通过直接访问媒体 URL 绕过。未配置 `SITE_ACCESS_PASSWORD` 时，首页保持开发环境的免登录行为。
 
 ## 发布 Docker 镜像
 
@@ -101,6 +109,7 @@ posters/                     # 首次迁移旧内容时需要
 ```bash
 cp .env.docker.example .env
 # 当前仓库已预填 ghcr.io/frankjian/duo-study-* 镜像地址；发布其他版本时只需修改 tag
+# 同时修改 SITE_ACCESS_PASSWORD 和 SITE_ACCESS_SECRET
 ```
 
 如果 GHCR 镜像是私有的，先登录：

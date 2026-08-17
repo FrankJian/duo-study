@@ -5,7 +5,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { config, mediaDirs } from "../config.js";
 import { db } from "../db/client.js";
 import { units, videos } from "../db/schema.js";
-import { requireAuth } from "../auth/session.js";
+import { loadAuth, requireAuth } from "../auth/session.js";
+import { requireSiteAccess } from "../auth/site-access.js";
 
 const mediaKeyPattern = /^[0-9a-f-]{36}\.(?:mp4|webp)$/i;
 
@@ -43,10 +44,13 @@ export function registerMediaRoutes(app: FastifyInstance) {
     const record = db.select({ video: videos }).from(videos).where(eq(videos.storageKey, key)).get();
     if (!record) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "媒体不存在" } });
     const publicAccess = isPublicVideo(record.video.id);
-    if (!publicAccess && !requireAuth(request, reply)) return;
+    const adminAccess = Boolean(request.auth ?? loadAuth(request));
+    if (!publicAccess) {
+      if (!requireAuth(request, reply)) return;
+    } else if (!adminAccess && !requireSiteAccess(request, reply)) return;
     const filePath = path.join(mediaDirs.videos, key);
     if (!fs.existsSync(filePath)) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "媒体不存在" } });
-    reply.header("cache-control", publicAccess ? "public, max-age=86400" : "private, no-store");
+    reply.header("cache-control", publicAccess && !config.siteAccessPassword ? "public, max-age=86400" : "private, no-store");
     if (process.env.NGINX_ACCEL_REDIRECT === "true") {
       return reply.type("video/mp4").header("x-accel-redirect", `/protected-media/videos/${key}`).send();
     }
@@ -59,10 +63,13 @@ export function registerMediaRoutes(app: FastifyInstance) {
     const record = db.select({ video: videos }).from(videos).where(eq(videos.posterKey, key)).get();
     if (!record) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "封面不存在" } });
     const publicAccess = isPublicVideo(record.video.id);
-    if (!publicAccess && !requireAuth(request, reply)) return;
+    const adminAccess = Boolean(request.auth ?? loadAuth(request));
+    if (!publicAccess) {
+      if (!requireAuth(request, reply)) return;
+    } else if (!adminAccess && !requireSiteAccess(request, reply)) return;
     const filePath = path.join(mediaDirs.posters, key);
     if (!fs.existsSync(filePath)) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "封面不存在" } });
-    reply.header("cache-control", publicAccess ? "public, max-age=86400" : "private, no-store");
+    reply.header("cache-control", publicAccess && !config.siteAccessPassword ? "public, max-age=86400" : "private, no-store");
     if (process.env.NGINX_ACCEL_REDIRECT === "true") {
       return reply.type("image/webp").header("x-accel-redirect", `/protected-media/posters/${key}`).send();
     }
